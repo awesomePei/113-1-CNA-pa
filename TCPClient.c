@@ -47,7 +47,6 @@ void communicate_with_another_client(int sockfd, const char *message) {
     char my_user[MAX], pay_amount[MAX], payee_user[MAX];
     sscanf(message, "%[^#]#%[^#]#%s", my_user, pay_amount, payee_user);
 
-    // If I am payer
     if (strcmp(my_account_name, my_user) == 0) {
         int payee_port = -1;
         char payee_ip[INET_ADDRSTRLEN];
@@ -93,7 +92,7 @@ void communicate_with_another_client(int sockfd, const char *message) {
                 printf("Transaction confirmed by %s.\n", payee_user);
 
                 // Notify the server of the completed transaction
-                //snprintf(ack_buffer, sizeof(ack_buffer), "%s#%s#%s", my_user, pay_amount, payee_user);
+                snprintf(ack_buffer, sizeof(ack_buffer), "%s#%s#%s", my_user, pay_amount, payee_user);
                 communicate_with_server(sockfd, ack_buffer);
             }
         } else {
