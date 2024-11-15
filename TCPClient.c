@@ -95,7 +95,7 @@ void communicate_with_another_client(int sockfd, const char *message) {
             
             // After transaction confirmed, start waiting response from server
             read(sockfd, buffer, sizeof(buffer));
-            printf("%s", buffer);
+            printf("%s------------\n", buffer);
             write(sockfd, "List", strlen("List"));
             read(sockfd, buffer, sizeof(buffer));
             printf("%s", buffer);
@@ -115,9 +115,6 @@ void communicate_with_server(int sockfd, const char *message) {
     char buffer[MAX];
     // Clear the buffer for receiving server responses
     bzero(buffer, sizeof(buffer));
-    
-    //ssize_t n = read(sockfd, buffer, sizeof(buffer));
-    //buffer[n] = '\0';  // Null-terminate the buffer
 
     if (strcmp(message, "List") == 0) {
         write(sockfd, message, strlen(message)); // Client sends messages to server
@@ -230,8 +227,6 @@ int main(int argc, char const *argv[])
     servaddr.sin_family = AF_INET;
     servaddr.sin_addr.s_addr = inet_addr(server_ip);
     servaddr.sin_port = htons(port); // predefined PORT = 8888
-
-    printf("IP: %s, port: %d\n", server_ip, port);
     
     // Connect client socket to server socket
     if (connect(sockfd, (SA*)&servaddr, sizeof(servaddr)) != 0) {
@@ -247,29 +242,7 @@ int main(int argc, char const *argv[])
         printf("Listening socket creation failed.\n");
         exit(0);
     }
-/*
-    struct sockaddr_in self_addr;
-    bzero(&self_addr, sizeof(self_addr));
-    self_addr.sin_family = AF_INET;
-    self_addr.sin_port = htons(user_port);  // Specify the port you want to listen on
-    self_addr.sin_addr.s_addr = INADDR_ANY;  // Use any available local address
 
-
-    if (bind(listen_sock, (SA*)&self_addr, sizeof(self_addr)) != 0) {
-        printf("Binding failed on port %d.\n", user_port);
-        exit(0);
-    }
-    if (listen(listen_sock, 5) != 0) {
-        printf("Listening failed on port %d.\n", user_port);
-        exit(0);
-    }
-    printf("Listening for P2P connections on port %d\n", user_port);
-
-    // Start the thread for handling incoming transactions
-    pthread_t tid;
-    pthread_create(&tid, NULL, handle_incoming_transactions, (void*)&listen_sock);
-
-*/
     // Take messsages
     while(1) {
         // get input
@@ -320,7 +293,7 @@ int main(int argc, char const *argv[])
                 close(listen_sock);
                 exit(0);
             }
-            printf("Listening for P2P connections on port %d\n", user_port);
+            //printf("Listening for P2P connections on port %d\n", user_port);
 
             // Start a thread for handling incoming transactions
             pthread_t tid;
@@ -330,7 +303,7 @@ int main(int argc, char const *argv[])
             // 錯誤訊息
             communicate_with_server(sockfd, user_input);
         }
-
+        
         // 清理 user_input
         bzero(user_input, sizeof(user_input));
 
