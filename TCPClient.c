@@ -14,8 +14,6 @@
 #define PORT 8888
 #define SA struct sockaddr
 
-void communicate_with_server(int sockfd, const char *message);
-
 typedef struct {
     char username[MAX];
     char ip_address[INET_ADDRSTRLEN];
@@ -24,10 +22,9 @@ typedef struct {
 
 ClientInfo clients[MAX_CLIENTS]; // Array to hold client information
 int client_count = 0; // Number of clients currently online
+int sockfd;
 
-char my_account_name[MAX];
-
-void parse_login_message(const char *message, char *account_name, int *user_port) {
+void parse_register_message(const char *message, char *account_name, int *user_port) {
     // Buffer for parsing account name and port number
     char temp_message[MAX];
     strncpy(temp_message, message, MAX);
@@ -42,67 +39,77 @@ void parse_login_message(const char *message, char *account_name, int *user_port
     }
 }
 
-
 void communicate_with_another_client(int sockfd, const char *message) {
     char my_user[MAX], pay_amount[MAX], payee_user[MAX];
+    
+    // Parse the message to extract MyUserAccountName, payAmount, and PayeeUserAccountName
     sscanf(message, "%[^#]#%[^#]#%s", my_user, pay_amount, payee_user);
 
-    if (strcmp(my_account_name, my_user) == 0) {
-        int payee_port = -1;
-        char payee_ip[INET_ADDRSTRLEN];
+    // Look up the payee's information in the stored clients array
+    int payee_port = -1;
+    char payee_ip[INET_ADDRSTRLEN];
 
-        // Look for payee's info in clients array
-        for (int i = 0; i < client_count; i++) {
-            if (strcmp(clients[i].username, payee_user) == 0) {
-                strcpy(payee_ip, clients[i].ip_address);
-                payee_port = clients[i].port;
-                break;
-            }
+    for (int i = 0; i < client_count; i++) {
+        if (strcmp(clients[i].username, payee_user) == 0) {
+            strcpy(payee_ip, clients[i].ip_address);
+            payee_port = clients[i].port;
+            break;
         }
-
-        if (payee_port == -1) {
-            printf("User %s not found online.\n", payee_user);
-            return;
-        }
-
-        int peer_sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (peer_sock < 0) {
-            printf("Socket creation failed.\n");
-            return;
-        }
-
-        struct sockaddr_in peer_addr;
-        peer_addr.sin_family = AF_INET;
-        peer_addr.sin_port = htons(payee_port);
-        inet_pton(AF_INET, payee_ip, &peer_addr.sin_addr);
-
-        if (connect(peer_sock, (SA*)&peer_addr, sizeof(peer_addr)) < 0) {
-            printf("Failed to connect to %s.\n", payee_user);
-            close(peer_sock);
-            return;
-        }
-
-        // Send transfer message to payee
-        write(peer_sock, message, strlen(message));
-
-        // Wait for acknowledgment from the payee
-        char ack_buffer[MAX];
-        if (read(peer_sock, ack_buffer, sizeof(ack_buffer)) > 0) {
-            if (strcmp(ack_buffer, "Transaction Received") == 0) {
-                printf("Transaction confirmed by %s.\n", payee_user);
-
-                // Notify the server of the completed transaction
-                snprintf(ack_buffer, sizeof(ack_buffer), "%s#%s#%s", my_user, pay_amount, payee_user);
-                communicate_with_server(sockfd, ack_buffer);
-            }
-        } else {
-            printf("No acknowledgment received from %s.\n", payee_user);
-        }
-
-        close(peer_sock);
     }
-}
 
+    if (payee_port == -1) {
+        printf("User %s not found online.\n", payee_user);
+        return;
+    }
+
+    // Create a socket to connect to the payee client
+    int peer_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (peer_sock == -1) {
+        printf("Socket creation failed for P2P transaction.\n");
+        return;
+    }
+
+    struct sockaddr_in peer_addr;
+    peer_addr.sin_family = AF_INET;
+    peer_addr.sin_port = htons(payee_port);
+    inet_pton(AF_INET, payee_ip, &peer_addr.sin_addr);
+
+    // Connect to the payee client
+    if (connect(peer_sock, (SA*)&peer_addr, sizeof(peer_addr)) != 0) {
+        printf("Connection to peer %s at %s:%d failed.\n", payee_user, payee_ip, payee_port);
+        close(peer_sock);
+        return;
+    }
+    
+    // Format the transfer message and send it to the payee
+    char transfer_message[MAX];
+    snprintf(transfer_message, sizeof(transfer_message), "%s#%s#%s", my_user, pay_amount, payee_user);
+    write(peer_sock, transfer_message, strlen(transfer_message));
+
+    // Wait for acknowledgment from the payee
+    char ack_buffer[MAX], buffer[MAX];
+    bzero(ack_buffer, sizeof(ack_buffer));
+    if (read(peer_sock, ack_buffer, sizeof(ack_buffer)) > 0) {
+        if (strcmp(ack_buffer, "Transaction Received") == 0) {
+            printf("Transaction confirmed by %s.\n", payee_user);
+            
+            // After transaction confirmed, start waiting response from server
+            read(sockfd, buffer, sizeof(buffer));
+            printf("%s", buffer);
+            write(sockfd, "List", strlen("List"));
+            read(sockfd, buffer, sizeof(buffer));
+            printf("%s", buffer);
+            // Notify the server about the completed transaction in the required format
+            //snprintf(transfer_message, sizeof(transfer_message), "%s#%s#%s", payee_user, pay_amount, my_user);
+            //write(sockfd, transfer_message, strlen(transfer_message));  // Inform the server of the successful transaction
+        }
+    } else {
+        printf("No acknowledgment received from %s.\n", payee_user);
+    }
+
+    // Close the P2P connection
+    close(peer_sock);
+}
 
 void communicate_with_server(int sockfd, const char *message) {
     char buffer[MAX];
@@ -130,7 +137,7 @@ void communicate_with_server(int sockfd, const char *message) {
 
             if (line_num == 1) {
                 // Account balance
-                printf("%s\n", line);
+                printf("Account Balance: %s\n", line);
             } else if (line_num == 2) {
                 // Server's public key
                 printf("Server Public Key: %s\n", line);
@@ -149,18 +156,12 @@ void communicate_with_server(int sockfd, const char *message) {
         }
     } else if (strchr(message, '#') != NULL && strchr(message, '#') != strrchr(message, '#')) {
         // p2p 傳輸
-        write(sockfd, message, strlen(message)); // Client sends messages to server
-        bzero(buffer, sizeof(buffer)); // Empty out the buffer
-        communicate_with_another_client(sockfd, message);
+        //write(sockfd, "List", strlen("List")); // Client sends messages to server
+        //bzero(buffer, sizeof(buffer)); // Empty out the buffer
         // Read response from server
-        char my_user[MAX], pay_amount[MAX], payee_user[MAX];
-        sscanf(message, "%[^#]#%[^#]#%s", my_user, pay_amount, payee_user);
-
-        if (strcmp(my_account_name, my_user) == 0) {
-            read(sockfd, buffer, sizeof(buffer));
-            printf("%s", buffer);
-        }
-
+        communicate_with_another_client(sockfd, message);
+        //read(sockfd, buffer, sizeof(buffer));
+        //printf("%s", buffer);
     } else {
         // Display single response for non-List commands
         write(sockfd, message, strlen(message)); // Client sends messages to server
@@ -184,30 +185,22 @@ void* handle_incoming_transactions(void* arg) {
         }
 
         // Read the incoming transaction message
-        bzero(buffer, sizeof(buffer));
-        if (read(connfd, buffer, sizeof(buffer)) > 0) {
-            printf("Received P2P transaction: %s\n", buffer);
+        read(connfd, buffer, sizeof(buffer));
+        printf("Received P2P transaction: %s\n", buffer);
 
-            // Send acknowledgment back to the payer
-            const char *ack_message = "Transaction Received";
-            write(connfd, ack_message, strlen(ack_message));
-            
-            // **Forward the transaction message to the server**
-            // Use communicate_with_server to send the exact message (A#1000#B) to the server
-            communicate_with_server(listen_sock, buffer); // Send the received buffer directly
-        } else {
-            printf("Failed to read from peer.\n");
-        }
-        
+        // Send acknowledgment back to the payer
+        char ack_message[MAX] = "Transaction Received";
+        write(connfd, ack_message, strlen(ack_message));
+        write(sockfd, buffer, sizeof(buffer));
+
+        // Close the connection
         close(connfd);
     }
-    return NULL;
 }
-
 
 int main() 
 {
-    int sockfd, connfd;
+    int connfd;
     struct sockaddr_in servaddr, cli; // sockaddr_in designed to store IPv4 address info for sockets (IP, port num, address family)
     char user_input[MAX];
     char account_name[MAX];
@@ -285,16 +278,12 @@ int main()
             // 註冊
             communicate_with_server(sockfd, user_input);
         } else if (strchr(user_input, '#') != NULL && strchr(user_input, '#') != strrchr(user_input, '#')) {
-            // 直接和另一個 client 進行轉帳
+            // 和另一個 client 進行 p2p 轉帳
             communicate_with_server(sockfd, user_input);
-            //communicate_with_another_client(sockfd, user_input);
         } else if (strchr(user_input, '#') != NULL && strchr(user_input, '#') == strrchr(user_input, '#')) {
             // 登入
             // Login and set up P2P listening socket
-            parse_login_message(user_input, account_name, &user_port);
-            bzero(my_account_name, sizeof(my_account_name));
-            strncpy(my_account_name, account_name, sizeof(my_account_name) - 1);
-
+            parse_register_message(user_input, account_name, &user_port);
             communicate_with_server(sockfd, user_input);            
 
             // Create a listening socket after login with the user_port
@@ -339,4 +328,3 @@ int main()
     // Close the client socket
     close(sockfd);
 }
-
