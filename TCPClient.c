@@ -11,7 +11,6 @@
 #include <pthread.h> // threads
 #define MAX 100
 #define MAX_CLIENTS 100
-#define PORT 8888
 #define SA struct sockaddr
 
 typedef struct {
@@ -23,6 +22,7 @@ typedef struct {
 ClientInfo clients[MAX_CLIENTS]; // Array to hold client information
 int client_count = 0; // Number of clients currently online
 int sockfd;
+const char *server_ip;
 
 void parse_register_message(const char *message, char *account_name, int *user_port) {
     // Buffer for parsing account name and port number
@@ -198,8 +198,17 @@ void* handle_incoming_transactions(void* arg) {
     }
 }
 
-int main() 
+int main(int argc, char const *argv[]) 
 {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <server_ip> <server_port>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    // Get server IP and port from command-line arguments
+    server_ip = argv[1];
+    int port = atoi(argv[2]);
+
     int connfd;
     struct sockaddr_in servaddr, cli; // sockaddr_in designed to store IPv4 address info for sockets (IP, port num, address family)
     char user_input[MAX];
@@ -219,8 +228,10 @@ int main()
 
     // Assign server socket IP address and port
     servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    servaddr.sin_port = htons(PORT); // predefined PORT = 8888
+    servaddr.sin_addr.s_addr = inet_addr(server_ip);
+    servaddr.sin_port = htons(port); // predefined PORT = 8888
+
+    printf("IP: %s, port: %d\n", server_ip, port);
     
     // Connect client socket to server socket
     if (connect(sockfd, (SA*)&servaddr, sizeof(servaddr)) != 0) {
